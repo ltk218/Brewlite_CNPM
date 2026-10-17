@@ -1,0 +1,19 @@
+import { createParamDecorator, ExecutionContext, SetMetadata } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  fullName: string;
+}
+
+export const ROLES_KEY = 'roles';
+export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
+
+export const CurrentUser = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): AuthenticatedUser => {
+    const request = ctx.switchToHttp().getRequest();
+    return request.user;
+  },
+);

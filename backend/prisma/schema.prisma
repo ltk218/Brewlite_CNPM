@@ -1,0 +1,298 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  PAYMENT_FAILED
+  CANCELLED
+}
+
+enum ProductSize {
+  S
+  M
+  L
+}
+
+enum PaymentMethod {
+  WALLET
+  CARD
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+}
+
+enum BarStation {
+  ESPRESSO_BAR
+  COLD_BREW_BAR
+  TEA_MATCHA_BAR
+}
+
+enum InventoryTxType {
+  IMPORT
+  ORDER_DEDUCT
+  ADJUSTMENT
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  passwordHash        String
+  fullName            String
+  phone               String?
+  role                UserRole             @default(CUSTOMER)
+  isActive            Boolean              @default(true)
+  loyaltyPoints       Int                  @default(0)
+  totalSpent          Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  orders              Order[]
+  loyaltyTransactions LoyaltyTransaction[]
+  auditLogs           AuditLog[]
+}
+
+model Category {
+  id           String     @id @default(uuid())
+  name         String     @unique
+  station      BarStation @default(ESPRESSO_BAR)
+  displayOrder Int        @default(1)
+  isActive     Boolean    @default(true)
+  products     Product[]
+}
+
+model Product {
+  id          String           @id @default(uuid())
+  categoryId  String?
+  code        String?          @unique
+  name        String
+  description String
+  category    String
+  station     BarStation       @default(ESPRESSO_BAR)
+  price       Int
+  imageUrl    String
+  stock       Int
+  version     Int              @default(1)
+  isAvailable Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  categoryRef Category?        @relation(fields: [categoryId], references: [id])
+  variants    ProductVariant[]
+  recipes     Recipe[]
+  orderItems  OrderItem[]
+}
+
+model ProductVariant {
+  id              String      @id @default(uuid())
+  productId       String
+  size            ProductSize
+  priceAdjustment Int
+  sku             String?
+  isActive        Boolean     @default(true)
+  product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ModifierGroup {
+  id         String           @id @default(uuid())
+  name       String           @unique
+  isRequired Boolean          @default(false)
+  isMultiple Boolean          @default(false)
+  minSelect  Int              @default(0)
+  maxSelect  Int              @default(1)
+  options    ModifierOption[]
+}
+
+model ModifierOption {
+  id              String        @id @default(uuid())
+  modifierGroupId String
+  name            String
+  price           Int           @default(0)
+  isActive        Boolean       @default(true)
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+}
+
+model Topping {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  price       Int
+  isAvailable Boolean @default(true)
+}
+
+model Promotion {
+  id                String   @id @default(uuid())
+  code              String   @unique
+  description       String
+  discountPercent   Int
+  maxDiscountAmount Int
+  minOrderValue     Int
+  usageLimit        Int      @default(1000)
+  usedCount         Int      @default(0)
+  isActive          Boolean  @default(true)
+  expiresAt         DateTime
+}
+
+model Order {
+  id                   String               @id @default(uuid())
+  orderCode            String               @unique
+  userId               String
+  status               OrderStatus          @default(PENDING)
+  pickupMethod         String               @default("PICKUP_COUNTER")
+  customerNote         String?
+  subtotal             Int
+  discountAmount       Int                  @default(0)
+  pointsUsed           Int                  @default(0)
+  pointsDiscountAmount Int                  @default(0)
+  total                Int
+  promotionCode        String?
+  cancelReason         String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                OrderItem[]
+  payments             Payment[]
+  loyaltyTransactions  LoyaltyTransaction[]
+}
+
+model OrderItem {
+  id                String      @id @default(uuid())
+  orderId           String
+  productId         String
+  productName       String
+  size              ProductSize
+  qty               Int
+  sugarLevel        String      @default("100% đường")
+  iceLevel          String      @default("Đá bình thường")
+  itemNote          String?
+  station           BarStation  @default(ESPRESSO_BAR)
+  toppings          Json
+  unitPrice         Int
+  lineTotal         Int
+  inventoryDeducted Boolean     @default(false)
+  kdsStartedAt      DateTime?
+  kdsReadyAt        DateTime?
+  servedAt          DateTime?
+  order             Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product           Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  orderId        String
+  idempotencyKey String        @unique
+  amount         Int
+  method         PaymentMethod
+  status         PaymentStatus
+  transactionRef String?
+  errorMessage   String?
+  createdAt      DateTime      @default(now())
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model LoyaltyTransaction {
+  id           String   @id @default(uuid())
+  userId       String
+  orderId      String
+  points       Int
+  balanceAfter Int      @default(0)
+  type         String   @default("EARN")
+  description  String
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Ingredient {
+  id                    String                 @id @default(uuid())
+  code                  String                 @unique
+  name                  String
+  unit                  String
+  currentStock          Float
+  minThreshold          Float
+  costPerUnit           Int
+  isActive              Boolean                @default(true)
+  updatedAt             DateTime               @updatedAt
+  recipes               Recipe[]
+  inventoryTransactions InventoryTransaction[]
+  purchaseOrderItems    PurchaseOrderItem[]
+}
+
+model Recipe {
+  id             String     @id @default(uuid())
+  productId      String
+  ingredientId   String
+  quantityNeeded Float
+  product        Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ingredient     Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+}
+
+model InventoryTransaction {
+  id             String          @id @default(uuid())
+  ingredientId   String
+  orderId        String?
+  type           InventoryTxType
+  quantityChange Float
+  balanceAfter   Float
+  reason         String
+  performedBy    String?
+  createdAt      DateTime        @default(now())
+  ingredient     Ingredient      @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+}
+
+model Supplier {
+  id             String          @id @default(uuid())
+  name           String
+  phone          String
+  email          String?
+  address        String?
+  isActive       Boolean         @default(true)
+  purchaseOrders PurchaseOrder[]
+}
+
+model PurchaseOrder {
+  id          String              @id @default(uuid())
+  poNumber    String              @unique
+  supplierId  String
+  totalAmount Int
+  status      String              @default("RECEIVED")
+  note        String?
+  createdAt   DateTime            @default(now())
+  supplier    Supplier            @relation(fields: [supplierId], references: [id])
+  items       PurchaseOrderItem[]
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(uuid())
+  purchaseOrderId String
+  ingredientId    String
+  quantity        Float
+  unitPrice       Int
+  lineTotal       Int
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  ingredient      Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String
+  details    String
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
